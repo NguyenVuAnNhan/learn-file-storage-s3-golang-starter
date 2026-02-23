@@ -6,7 +6,9 @@ import (
 	"io"
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/auth"
 	"github.com/google/uuid"
-	"encoding/base64"
+	"path"
+	"strings"
+	"os"
 )
 
 func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Request) {
@@ -44,12 +46,6 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 
 	mediaType := header.Header.Get("Content-Type")
 
-	fileBytes, err := io.ReadAll(file)
-	if err != nil {
-		respondWithError(w, http.StatusInternalServerError, "Failed to read thumbnail file", err)
-		return
-	}
-
 	video, err := cfg.db.GetVideo(videoID)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Failed to get video metadata", err)
@@ -61,10 +57,26 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	dataString := base64.StdEncoding.EncodeToString(fileBytes)
+	
+	fileExtension := strings.Split(mediaType, "/")[1]
+	path := path.Join(cfg.filepathRoot, "../assets", fmt.Sprintf("%s.%s", videoID, fileExtension))
 
-	dataURL := "data:" + mediaType + ";base64," + dataString
+	fmt.Println("Saving thumbnail to", path)
 
+	newFile, err := os.Create(path)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Failed to create thumbnail file", err)
+		return
+	}
+	defer newFile.Close()
+
+	_, err = io.Copy(newFile, file)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Failed to save thumbnail file", err)
+		return
+	}
+
+	dataURL := fmt.Sprintf("http://localhost:%s/assets/%s.%s", cfg.port, videoID, fileExtension)
 	video.ThumbnailURL = &dataURL
 
 	err = cfg.db.UpdateVideo(video)
