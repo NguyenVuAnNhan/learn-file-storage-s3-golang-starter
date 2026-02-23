@@ -9,6 +9,7 @@ import (
 	"path"
 	"strings"
 	"os"
+	"mime"
 )
 
 func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Request) {
@@ -45,6 +46,17 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 	defer file.Close()
 
 	mediaType := header.Header.Get("Content-Type")
+
+	finalMediaType, _, err := mime.ParseMediaType(mediaType)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Failed to parse media type", err)
+		return
+	}
+
+	if finalMediaType != "image/jpeg" && finalMediaType != "image/png" {
+		respondWithError(w, http.StatusBadRequest, "Unsupported media type. Only JPEG and PNG are allowed", nil)
+		return
+	}
 
 	video, err := cfg.db.GetVideo(videoID)
 	if err != nil {
