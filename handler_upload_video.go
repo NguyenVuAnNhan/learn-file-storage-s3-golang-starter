@@ -11,7 +11,41 @@ import (
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/auth"
 	"github.com/google/uuid"
 	"fmt"
+
+	"encoding/json"
+	"bytes"
+	"os/exec"
 )
+
+func getVideoAspectRatio(filepath string) (string, error) {
+	command := exec.Command("ffprobe", "-v", "error", "-print_format", "json", "-show_streams", filepath)
+	buffer := bytes.Buffer{}
+	command.Stdout = &buffer
+	err := command.Run()
+	if err != nil {
+		return "", err
+	}
+
+	var ffprobeOutput struct {
+		Streams []struct {
+			Width  int `json:"width"`
+			Height int `json:"height"`
+		} `json:"streams"`
+	}
+
+	err = json.Unmarshal(buffer.Bytes(), &ffprobeOutput)
+	if err != nil {
+		return "", err
+	}
+
+	if ffprobeOutput.Streams[0].Width / ffprobeOutput.Streams[0].Height == 16/9 {
+		return "landscape", nil
+	} else if ffprobeOutput.Streams[0].Width / ffprobeOutput.Streams[0].Height == 9/16 {
+		return "portrait", nil
+	} else {
+		return "other", nil
+	}
+}
 
 func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request) {
 
@@ -85,7 +119,14 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	key := getAssetPath(mediaType)
+	aspectRatio, err := getVideoAspectRatio(tempFile.Name())
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Could not determine video aspect ratio", err)
+		return
+	}
+
+	key := aspectRatio + "/" + getAssetPath(mediaType)
+
 	_, err = cfg.s3Client.PutObject(r.Context(), &s3.PutObjectInput{
 		Bucket:      aws.String(cfg.s3Bucket),
 		Key:         aws.String(key),
